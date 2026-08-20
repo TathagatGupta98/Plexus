@@ -105,23 +105,46 @@ curl -s "$NETHERMIND" -X POST -H 'Content-Type: application/json' \
 ## 5. Run the tests
 
 Live tests are `#[ignore]`d, so `cargo test` and CI never touch them and never
-need a devnet. Run them explicitly, pointing at a port from step 3:
+need a devnet. Run them explicitly, with URLs from step 3:
 
 ```sh
-PLEXUS_RPC_URL=$(kurtosis port print plexus-bal-devnet el-1-reth-lighthouse rpc) \
-  cargo test -p parser --test live_reth_bal -- --ignored --nocapture
+export PLEXUS_RETH_RPC_URL=$(kurtosis port print plexus-bal-devnet el-1-reth-lighthouse rpc)
+export PLEXUS_NETHERMIND_RPC_URL=$(kurtosis port print plexus-bal-devnet el-2-nethermind-lighthouse rpc)
+
+make devnet-test
 ```
 
-Pin a specific block with `PLEXUS_BLOCK=0x1234`; it defaults to `latest`. Note
-that the crate in `crates/extractor` is named `parser`, hence `-p parser`.
+`make devnet-test` is shorthand for:
 
-An idle devnet produces empty blocks, and a BAL over zero transactions asserts
-very little. Send some traffic, or pick a block you know has transactions, if
-you want the run to be meaningful.
+```sh
+cargo test -p parser --test devnet_bal_e2e -- --ignored --nocapture
+```
 
-> The two-client end-to-end test — cached fetch through both clients plus a
-> cross-client agreement check — is the remaining piece of #31 and will be
-> documented here when it lands.
+Note the crate in `crates/extractor` is named `parser`, hence `-p parser`.
+
+Three tests run:
+
+| Test | What it covers |
+| --- | --- |
+| `reth_end_to_end` | fetch → commitment check → `bal.json` cache → cache hit → normalize, via JSON |
+| `nethermind_end_to_end` | the same, via raw RLP |
+| `clients_agree_on_the_same_block` | both clients decode the same block to byte-identical data and normalize to the same access sets |
+
+Each test only needs the clients it names, so a Reth-only run can set just
+`PLEXUS_RETH_RPC_URL` and add a `reth_end_to_end` filter.
+
+**Picking a block.** By default the tests use the newest block that has
+transactions, walking back up to 64 blocks from `latest`. Pin one instead with
+`PLEXUS_BLOCK`, in hex or decimal:
+
+```sh
+PLEXUS_BLOCK=0x63 make devnet-test
+```
+
+An idle devnet mines empty blocks, and a BAL over zero transactions would let
+most assertions pass vacuously — so rather than quietly testing nothing, the
+tests fail with a note to send some traffic or pin a block. Any transaction
+will do; the devnet's prefunded accounts are listed in the Kurtosis output.
 
 ## 6. Tear it down
 
